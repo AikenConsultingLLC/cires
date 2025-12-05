@@ -35,6 +35,12 @@ This repository contains a small collection of files for data conversion and vis
 
    Then open `http://localhost:8000` in your browser.
 
+## Live Demo
+
+The site is hosted at **[https://oneshin.pythonanywhere.com/](https://oneshin.pythonanywhere.com/)**. Visit the link to see the visualizations live.
+
+![Site screenshot](visuals/screenshot.png)
+
 ## Contributing
 
 Feel free to open issues or submit pull requests for improvements, new data formats, or additional visualizations.
