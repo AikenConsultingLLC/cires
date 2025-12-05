@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar Wind Particle Visualizer</title>
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div id="ui-container">
+        <header>
+            <h1>Solar Wind Particle Visualizer</h1>
+            <p id="status">Status: Initializing...</p>
+        </header>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="colorPicker">Particle Color</label>
+                <input type="color" id="colorPicker" value="#00ffff">
+            </div>
+            
+            <div class="control-group">
+                 <div class="data-display">
+                    <div>Bx: <span id="val-bx">--</span> nT</div>
+                    <div>By: <span id="val-by">--</span> nT</div>
+                    <div>Bz: <span id="val-bz">--</span> nT</div>
+                    <div>Bt: <span id="val-bt">--</span> nT</div>
+                 </div>
+            </div>
+        </div>
+        
+        <div class="camera-feed-container">
+            <video id="input_video"></video>
+            <canvas id="output_canvas" width="320" height="240"></canvas>
+        </div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
