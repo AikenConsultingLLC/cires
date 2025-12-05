@@ -51,4 +51,10 @@ This project is provided under the MIT License. See the `LICENSE` file for detai
 
 ---
 
+### Acknowledgements
+
+Inspired by the work of [E. Huanglu](https://x.com/EHuanglu).
+
+Data provided by **CIRES / NOAA** ([https://epic.gsfc.nasa.gov/](https://epic.gsfc.nasa.gov/)).
+
 *Created with ❤️ for easy data conversion and visualization.*
