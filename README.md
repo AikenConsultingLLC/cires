@@ -1,4 +1,4 @@
-# Cires Repository
+# CIRES Repository
 
 This repository contains a small collection of files for data conversion and visualization.
 
