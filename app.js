@@ -16,8 +16,10 @@ const state = {
     isPaused: false,
     baseColor: new THREE.Color(0xffff00), // Default yellow particles
     bzValue: 0, // Current Bz value affecting magnetosphere
+    btValue: 5, // Current Bt value (magnitude) affecting particle length
     particleScale: 1.0, // Scale factor for particle size based on hand distance
     particleExpansion: 1.0, // Expansion factor based on hand tension
+    simTime: 0, // Simulation time (seconds) of current data point
 };
 
 // DOM Elements
@@ -54,6 +56,7 @@ function initThreeJS() {
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
     container.appendChild(renderer.domElement);
 
     // Earth
@@ -67,7 +70,8 @@ function initThreeJS() {
     scene.add(ambientLight);
 
     const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
-    sunLight.position.set(100, 50, 50).normalize();
+    sunLight.position.set(500, 0, 0);
+    sunLight.castShadow = true;
     scene.add(sunLight);
 
     // Handle Window Resize
@@ -77,14 +81,18 @@ function initThreeJS() {
 function createEarth() {
     // Larger Earth with ocean‑like color
     const geometry = new THREE.SphereGeometry(250, 32, 32);
-    const material = new THREE.MeshPhongMaterial({
-        color: 0x1e90ff, // DodgerBlue – resembles Earth's oceans
-        specular: 0x555555,
-        shininess: 30,
+    const textureLoader = new THREE.TextureLoader();
+    const earthTexture = textureLoader.load('visuals/2k_earth_daymap.jpg');
+    const material = new THREE.MeshStandardMaterial({
+        map: earthTexture,
+        color: 0xffffff,
         transparent: true,
-        opacity: 0.95
+        opacity: 0.95,
+        metalness: 0,
+        roughness: 1
     });
     earthMesh = new THREE.Mesh(geometry, material);
+    earthMesh.receiveShadow = true;
     scene.add(earthMesh);
 
     // Wireframe Magnetosphere boundary visualization
@@ -101,53 +109,66 @@ function createEarth() {
 
 function createParticleSystem() {
     const particleCount = 15000;
-    const geometry = new THREE.BufferGeometry();
+
+    // Store particle data for animation
     const positions = [];
-    const colors = [];
-    const sizes = [];
     const velocities = [];
 
-    const color = new THREE.Color();
+    // Geometry for a small arrow (cone) pointing along +Y, will be rotated per instance
+    // Reduced size and made translucent per user feedback
+    // Reduced cone size: radius 20% (0.4), height 33% (≈2.6) of original
+    const arrowGeometry = new THREE.ConeGeometry(0.4, 2.6, 5);
+    const arrowMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffff00,
+        transparent: true,
+        opacity: 0.6
+    });
+
+    // Instanced mesh to efficiently render many arrows
+    const particleMesh = new THREE.InstancedMesh(arrowGeometry, arrowMaterial, particleCount);
+    particleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    scene.add(particleMesh);
+
+    const dummy = new THREE.Object3D();
 
     for (let i = 0; i < particleCount; i++) {
-        // Start particles flowing from the sun direction (positive X mostly)
-        // creating a "solar wind" effect
+        // Initial position (sun side)
         const x = 500 + Math.random() * 1000;
         const y = (Math.random() - 0.5) * 1000;
         const z = (Math.random() - 0.5) * 1000;
-
         positions.push(x, y, z);
-        
-        // Flow velocity towards Earth (-x direction)
-        velocities.push(-2 - Math.random() * 3); // vx
-        velocities.push((Math.random() - 0.5) * 0.5); // vy
-        velocities.push((Math.random() - 0.5) * 0.5); // vz
 
-        // Yellow particles for solar‑wind visualization
-        color.setHSL(0.15 + Math.random() * 0.05, 0.9, 0.6);
-        colors.push(color.r, color.g, color.b);
+        // Initial velocity towards Earth (negative X)
+        const vx = -2 - Math.random() * 3;
+        const vy = (Math.random() - 0.5) * 0.5;
+        const vz = (Math.random() - 0.5) * 0.5;
+        velocities.push(vx, vy, vz);
+
+        // Set initial instance matrix
+        dummy.position.set(x, y, z);
+        dummy.scale.setScalar(1);
         
-        sizes.push(2 + Math.random() * 4);
+        // Orient arrow to point along its velocity vector.
+        // Since ConeGeometry points to +Y by default, we need to rotate it to point to +Z (lookAt standard)
+        // or just use lookAt and then rotate X by -PI/2 to align the cone tip with the direction.
+        
+        // Target point based on velocity
+        dummy.lookAt(x + vx, y + vy, z + vz);
+        
+        // Correct orientation: rotate 90 degrees around X so the Y-axis cone points towards Z-axis lookAt
+        dummy.rotateX(Math.PI / 2);
+
+        dummy.updateMatrix();
+        particleMesh.setMatrixAt(i, dummy.matrix);
     }
 
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
-    geometry.setAttribute('velocity', new THREE.Float32BufferAttribute(velocities, 3));
-    geometry.setAttribute('initialPos', new THREE.Float32BufferAttribute(positions, 3)); // For respawn logic
-
-    const material = new THREE.PointsMaterial({
-        size: 3,
-        vertexColors: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        transparent: true,
-        opacity: 0.7,
-        sizeAttenuation: true
-    });
-
-    particleSystem = new THREE.Points(geometry, material);
-    scene.add(particleSystem);
+    // Store for later updates
+    window.particleData = {
+        positions: new Float32Array(positions),
+        velocities: new Float32Array(velocities),
+        mesh: particleMesh,
+        dummy: dummy
+    };
 }
 
 async function loadData() {
@@ -278,17 +299,21 @@ function updateDataVisualization(time) {
 
     if (!state.isPaused && time - lastTime > effectiveInterval) {
         const data = magneticData[currentTimeIndex];
-        
+                 
         if (data) {
             // Update UI
             valBx.textContent = data.bx ? data.bx.toFixed(2) : '--';
             valBy.textContent = data.by ? data.by.toFixed(2) : '--';
             valBz.textContent = data.bz ? data.bz.toFixed(2) : '--';
             valBt.textContent = data.bt ? data.bt.toFixed(2) : '--';
-
+         
             // Store Bz for particle logic
             state.bzValue = data.bz || 0;
-
+            state.btValue = data.bt || 5;
+         
+            // Store simulation time for clock display
+            state.simTime = data.time || 0;
+         
             // Visual feedback on Earth magnetosphere mesh
             // If Bz is negative (Southward IMF), reconnection happens -> more activity/redder
             if (state.bzValue < 0) {
@@ -307,66 +332,62 @@ function updateDataVisualization(time) {
 
 function animate(time) {
     requestAnimationFrame(animate);
-
     updateDataVisualization(time);
 
-    if (particleSystem && state.isPaused === false) {
-        // Apply particle scaling based on hand distance and expansion
-        particleSystem.material.size = 3 * state.particleScale * state.particleExpansion;
+    // Update particle scaling based on hand distance and expansion
+    if (window.particleData && state.isPaused === false) {
+        const baseScale = 3 * state.particleScale * state.particleExpansion;
+        // Scale length (Z-axis of the cone) based on Bt value.
+        // Normalize Bt (typically 0-20 nT) to a length multiplier (e.g., 1.0 to 3.0)
+        const lengthMultiplier = Math.max(1.0, Math.min(3.0, state.btValue / 5.0));
+        
+        window.particleData.dummy.scale.set(baseScale, baseScale, baseScale * lengthMultiplier);
 
-        const positions = particleSystem.geometry.attributes.position.array;
-        const velocities = particleSystem.geometry.attributes.velocity.array;
+        const positions = window.particleData.positions;
+        const velocities = window.particleData.velocities;
         const count = positions.length / 3;
-
-        // Bz effect: Negative Bz encourages particles to enter the magnetosphere (cusps)
-        // Positive Bz deflects them more strongly (bow shock)
-        const magnetosphereRadius = 180;
+        const dummy = window.particleData.dummy;
+        const mesh = window.particleData.mesh;
         const bzFactor = state.bzValue;
-        const attractionStrength = bzFactor < -5 ? 0.05 : 0.001; // Stronger attraction if Bz is very negative
 
         for (let i = 0; i < count; i++) {
             const i3 = i * 3;
-            
             let x = positions[i3];
             let y = positions[i3 + 1];
             let z = positions[i3 + 2];
 
             // Update position
+            // Reduce speed to 0.25 when a fist (handOpenness near 0) is detected
+            if (state.handOpenness < 0.2) {
+                playbackMultiplier = 0.25;
+            }
             x += velocities[i3] * playbackMultiplier * state.particleExpansion;
             y += velocities[i3 + 1] * playbackMultiplier * state.particleExpansion;
             z += velocities[i3 + 2] * playbackMultiplier * state.particleExpansion;
 
-            // Distance to Earth center (0,0,0)
-            const distSq = x*x + y*y + z*z;
+            const distSq = x * x + y * y + z * z;
             const dist = Math.sqrt(distSq);
 
-            // Magnetosphere Interaction
-            if (dist < 400 && dist > 150) {
-                if (bzFactor < 0) {
-                    // Magnetic Reconnection Simulation
-                    // Funnel particles into polar regions (cusps)
-                    // Simple heuristic: attract towards Y axis poles if near them
-                    const polarAngle = Math.abs(Math.atan2(Math.sqrt(x*x + z*z), y));
-                    if (polarAngle < 0.5 || polarAngle > 2.6) {
-                        // Near poles: suck in
-                        x *= 0.98;
-                        y *= 0.98;
-                        z *= 0.98;
-                        // Add glow effect or color change here if possible (expensive per particle)
-                    }
-                } else {
-                    // Positive Bz: Strong deflection (Bow Shock protection)
-                    // Push away from Earth center
-                    const push = (400 - dist) * 0.002;
-                    x += (x / dist) * push;
-                    y += (y / dist) * push;
-                    z += (z / dist) * push;
-                }
+            // Magnetosphere interaction: prevent particles from entering the Earth (dist < 260 approx)
+            // Earth radius is 250.
+            if (dist < 320) {
+                // Deflection force scaled to match smaller cone size (≈33% of original)
+                const sizeFactor = 0.77; // adjust deflection to 77% of original strength
+                const pushStrength = (320 - dist) * 0.05 * sizeFactor;
+                const nx = x / dist;
+                const ny = y / dist;
+                const nz = z / dist;
+                
+                x += nx * pushStrength;
+                y += ny * pushStrength;
+                z += nz * pushStrength;
+
+                // Also deflect velocity to avoid sticking
+                velocities[i3 + 1] += ny * 0.5;
+                velocities[i3 + 2] += nz * 0.5;
             }
 
-            // Reset if too far or hit Earth
-            if (x < -1000 || dist < 155 || Math.abs(y) > 800 || Math.abs(z) > 800) {
-                // Respawn at source (sun side)
+            if (x < -1000 || dist < 260 || Math.abs(y) > 800 || Math.abs(z) > 800) {
                 x = 800 + Math.random() * 200;
                 y = (Math.random() - 0.5) * 800;
                 z = (Math.random() - 0.5) * 800;
@@ -375,11 +396,31 @@ function animate(time) {
             positions[i3] = x;
             positions[i3 + 1] = y;
             positions[i3 + 2] = z;
-        }
 
-        particleSystem.geometry.attributes.position.needsUpdate = true;
+            dummy.position.set(x, y, z);
+
+            // Orient based on velocity + Bz influence
+            // Cone points to +Y by default. We rotate X +90deg to point to Z.
+            // Then we lookAt the target direction.
+            
+            // Simple approach: look at the next position (velocity direction)
+            // Plus a vertical bias based on Bz to make them tilt up/down
+            const vy = velocities[i3 + 1];
+            
+            // If bz < 0, particles tilt down (negative Y bias).
+            // If bz > 0, particles tilt up (positive Y bias).
+            // Scale bias by 0.1 for subtle effect
+            const bzBias = state.bzValue * 0.1;
+
+            dummy.lookAt(x + velocities[i3], y + vy + bzBias, z + velocities[i3 + 2]);
+            dummy.rotateX(Math.PI / 2);
+
+            dummy.updateMatrix();
+            mesh.setMatrixAt(i, dummy.matrix);
+        }
+        mesh.instanceMatrix.needsUpdate = true;
     }
-    
+
     // Rotate Earth slowly
     if (earthMesh) earthMesh.rotation.y += 0.0005;
     if (atmosphereMesh) atmosphereMesh.rotation.y += 0.0007;
@@ -389,24 +430,13 @@ function animate(time) {
 
 function setupEventListeners() {
     const colorPicker = document.getElementById('colorPicker');
+    // Set initial picker value to match the default particle color (yellow)
+    colorPicker.value = '#ffff00';
     colorPicker.addEventListener('input', (e) => {
         state.baseColor.set(e.target.value);
-        
-        // Update all particle colors
-        const colors = particleSystem.geometry.attributes.color.array;
-        for (let i = 0; i < colors.length; i += 3) {
-            // Add some variation back
-            const hsl = {};
-            state.baseColor.getHSL(hsl);
-            
-            const variation = Math.random() * 0.1;
-            const tempColor = new THREE.Color().setHSL(hsl.h + variation, hsl.s, hsl.l);
-            
-            colors[i] = tempColor.r;
-            colors[i + 1] = tempColor.g;
-            colors[i + 2] = tempColor.b;
+        if (window.particleData) {
+            window.particleData.mesh.material.color.set(state.baseColor);
         }
-        particleSystem.geometry.attributes.color.needsUpdate = true;
     });
 }
 
@@ -418,3 +448,35 @@ function onWindowResize() {
 
 // Start
 init();
+// Clock element update - shows simulation time
+function updateClock() {
+    const clockEl = document.getElementById('clock');
+    if (!clockEl) return;
+
+    // If simulation time is available, display it; otherwise fall back to real UTC time
+    if (state && typeof state.simTime === 'number' && state.simTime > 0) {
+        // Assume simTime is milliseconds since epoch. Convert to Date.
+        // If the value is very small (e.g. relative time), treat it as seconds * 1000?
+        // Based on magnetic_data.json sample "1764806400000.0", it looks like milliseconds.
+        const simDate = new Date(state.simTime);
+        const year = simDate.getUTCFullYear();
+        const month = String(simDate.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(simDate.getUTCDate()).padStart(2, '0');
+        const hours = String(simDate.getUTCHours()).padStart(2, '0');
+        const minutes = String(simDate.getUTCMinutes()).padStart(2, '0');
+        const seconds = String(simDate.getUTCSeconds()).padStart(2, '0');
+        clockEl.textContent = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} UTC`;
+    } else {
+        const now = new Date();
+        const utc = new Date(now.getTime() + now.getTimezoneOffset() * 60000);
+        const year = utc.getUTCFullYear();
+        const month = String(utc.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(utc.getUTCDate()).padStart(2, '0');
+        const hours = String(utc.getUTCHours()).padStart(2, '0');
+        const minutes = String(utc.getUTCMinutes()).padStart(2, '0');
+        const seconds = String(utc.getUTCSeconds()).padStart(2, '0');
+        clockEl.textContent = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} UTC`;
+    }
+}
+setInterval(updateClock, 1000);
+updateClock();

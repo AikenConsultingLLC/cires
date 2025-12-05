@@ -6,10 +6,11 @@ Create a web‑based visualizer that:
 - Renders a 3‑D particle system with **Three.js**.
 - Detects **both hands** via the webcam using **MediaPipe Hands**.
 - Maps hand gestures to particle system parameters:
-  - **Hand openness** → playback speed (open hand = fast, fist = pause).
+  - **Hand openness** → playback speed (open hand = fast, fist = 0.25× speed).
   - **Distance between hands** → particle scaling & expansion (hand tension).
 - Provides a **color selector** to change particle colors instantly.
 - Visualizes **NOAA CIRES GSM magnetospheric data** (converted from NetCDF to JSON).
+- Displays a **simulation clock** synced to the data timestamp.
 - Offers a **clean, modern UI**.
 
 ---
@@ -62,21 +63,22 @@ The JSON is loaded in **`app.js`** with `fetch('magnetic_data.json')`.
 - **Renderer**: WebGL, attached to `<canvas id="threeCanvas">`.
 - **Particle System**:
   ```js
-  const geometry = new THREE.BufferGeometry();
-  const positions = new Float32Array(particleCount * 3);
-  const velocities = new Float32Array(particleCount * 3);
-  const colors = new Float32Array(particleCount * 3);
-  // ...initialize arrays...
-  const material = new THREE.PointsMaterial({
-      size: 3,
-      vertexColors: true,
+  // Use InstancedMesh to render each particle as a small 3‑D arrow (cone)
+  // that points in the direction of its velocity.
+  // Particles are small and translucent, with orientation influenced by bZ.
+  // Updated cone size: radius 20% (0.4), height 33% (≈2.6) of original
+  const arrowGeometry = new THREE.ConeGeometry(0.4, 2.6, 8);
+  const arrowMaterial = new THREE.MeshBasicMaterial({
+      // Default particle color (yellow) matching the GUI picker initial value
+      color: 0xffff00,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.6
   });
-  const particleSystem = new THREE.Points(geometry, material);
-  scene.add(particleSystem);
+  const particleMesh = new THREE.InstancedMesh(arrowGeometry, arrowMaterial, particleCount);
+  particleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(particleMesh);
   ```
-- **Earth Model**: Simple sphere with a texture; placed at the origin.
+- **Earth Model**: Sphere textured with `visuals/2k_earth_daymap.jpg`, placed at the origin. The directional light is positioned to the right of the scene, casting shadows so the left side of the Earth appears in shadow.
 - **Magnetosphere Wireframe**: Scaled sphere whose color (red/blue) reflects the sign of the current `bz` value.
 
 ### 5.2 MediaPipe Hands
@@ -96,7 +98,7 @@ hands.setOptions({
 ### 5.3 Gesture Processing (`processGestures`)
 1. **Hand Openness** – average distance between tip and MCP of each finger.  
    - `state.handOpenness` ∈ [0,1] → `playbackMultiplier = 0.5 + 1.5 * handOpenness`.  
-   - `open hand` → fast playback, `fist` → pause (handled in UI).
+   - `open hand` → fast playback, `fist` → 0.25× speed (handled in UI).
 2. **Two‑Hand Distance** – Euclidean distance between the wrist landmarks of both hands.  
    - Scales particle size: `state.particleScale = minScale + distance * (maxScale - minScale)`.  
    - Expansion factor: `state.particleExpansion = 1.0 + (1.0 - handOpenness) * 0.5`.  
@@ -108,15 +110,17 @@ hands.setOptions({
   if (bz < 0) { atmosphereMesh.material.color.set(0xff0000); }
   else { atmosphereMesh.material.color.set(0x0000ff); }
   ```
-- The same `bz` magnitude influences particle attraction/repulsion (simple velocity scaling).
+- **Bt Scaling**: The total magnetic field magnitude (`bt`) scales the length of the particles (Z-axis), visually representing field intensity.
+- **Magnetosphere Deflection**: Particles approaching the Earth model (< 320 units) are deflected radially and tangentially to simulate the magnetosheath flow, preventing them from clipping into the Earth.
 
 ### 5.5 UI Elements
 | Element | Purpose |
 |---------|---------|
 | `#status` | Shows playback speed / pause state. |
 | `#val-bx`, `#val-by`, `#val-bz`, `#val-bt` | Live data readouts. |
-| `<input type="color" id="colorPicker">` | Changes particle base color instantly. |
+| `<input type="color" id="colorPicker">` | Changes particle base color instantly (initialized to match the default yellow particle color). |
 | `<video id="cameraFeed">` | Mirrors webcam feed (semi‑transparent overlay). |
+| `#clock` | Displays the current simulation date/time in UTC. |
 
 CSS uses CSS variables for easy theming and positions the UI in the top‑right corner.
 
@@ -167,6 +171,9 @@ CSS uses CSS variables for easy theming and positions the UI in the top‑right 
 [x] Update gesture controls for playback speed (Open=Play, Fist=Pause)
 [x] Adjust Earth size/color and particle color per user feedback
 [x] Create project documentation (PROJECT_OVERVIEW.md)
+[x] Add simulation clock to UI
+[x] Implement magnetosphere particle deflection logic
+[x] Scale particle length based on magnetic field magnitude (Bt)
 ```
 
 --- 

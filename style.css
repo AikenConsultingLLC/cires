@@ -139,3 +139,20 @@ input[type="color"] {
     height: 100%;
     z-index: 1;
 }
+
+/* Clock styling - bottom left corner */
+#clock {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    padding: 6px 12px;
+    background: var(--panel-bg);
+    backdrop-filter: blur(8px);
+    color: var(--text-color);
+    font-family: var(--font-family);
+    font-size: 0.85rem;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    z-index: 20;
+    pointer-events: auto;
+}
