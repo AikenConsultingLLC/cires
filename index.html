@@ -23,15 +23,11 @@
 <body>
     <div id="ui-container">
         <header>
-            <h1>Solar Wind Particle Visualizer</h1>
+            <h1>Solar Wind Particle Visualizer ( <a href="https://github.com/AikenConsultingLLC/cires" target="_blank">GitHub</a> ) </h1>
             <p id="status">Status: Initializing...</p>
         </header>
 
         <div class="controls">
-            <div class="control-group">
-                <label for="colorPicker">Particle Color</label>
-                <input type="color" id="colorPicker" value="#00ffff">
-            </div>
             
             <div class="control-group">
                  <div class="data-display">
@@ -40,6 +36,11 @@
                     <div>Bz: <span id="val-bz">--</span> nT</div>
                     <div>Bt: <span id="val-bt">--</span> nT</div>
                  </div>
+            </div>
+            
+            <div class="control-group color-picker">
+                <label for="colorPicker">Particle Color</label>
+                <input type="color" id="colorPicker" value="#00ffff">
             </div>
         </div>
         
